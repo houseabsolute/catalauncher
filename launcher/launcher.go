@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -28,10 +29,11 @@ type build struct {
 }
 
 type C struct {
-	rootDir   string
-	stdout    io.Writer
-	stderr    io.Writer
-	buildsURI string
+	rootDir     string
+	stdout      io.Writer
+	stderr      io.Writer
+	buildsURI   string
+	currentUser *user.User
 }
 
 const defaultBuildsURI = "http://dev.narc.ro/cataclysm/jenkins-latest/Linux_x64/Tiles/"
@@ -153,17 +155,20 @@ func (c *C) currentBuild() int {
 		c.printErrorAndExit("Could not read directory at %s: %s", c.buildDir(), err)
 	}
 
+	builds := []int{}
 	for _, f := range files {
 		if f.IsDir() && buildNumberRE.MatchString(f.Name()) {
 			i, err := strconv.Atoi(f.Name())
 			if err != nil {
 				c.printErrorAndExit("Could not convert %s to an integer: %s", f.Name(), err)
 			}
-			return i
+			builds = append(builds, i)
 		}
 	}
 
-	return 0
+	sort.Ints(builds)
+
+	return builds[len(builds)-1]
 }
 
 func (c *C) downloadBuild(b build) {
@@ -228,19 +233,20 @@ func (c *C) launchGame(num int) {
 	// XXX - need to get "cataclysmdda-0.C" dynamically
 	gameDir := filepath.Join(c.buildDir(), strconv.Itoa(num), "cataclysmdda-0.C")
 
-	tiles := strings.Join(
-		[]string{"./cataclysm-tiles", "--save-dir", "/data/save", "--config-dir", "/data/config"},
-		" ",
-	)
-
 	args := []string{
 		"run",
+		"--user", fmt.Sprintf("%s:%s", c.userID(), c.groupID()),
 		"--rm",
 		"-i",
+		"-e", "DISPLAY",
+		"--device", "/dev/dri",
+		"--device", "/dev/snd",
+		"-v", "/tmp/.X11-unix:/tmp/.X11-unix",
 		"-v", dataDir + ":/data",
 		"-v", gameDir + ":/game",
+		"-w", "/game",
 		"houseabsolute/catalauncher-player:latest",
-		fmt.Sprintf(`/bin/bash -c "cd /game && %s"`, tiles),
+		"./cataclysm-tiles", "--save-dir", "/data/save", "--config-dir", "/data/config",
 	}
 	cmd := exec.Command("docker", args...)
 	out, err := cmd.CombinedOutput()
@@ -256,6 +262,26 @@ func (c *C) mkdir(dir string) {
 	if err != nil {
 		c.printErrorAndExit("Could not make directory %s: %s", dir, err)
 	}
+}
+
+func (c *C) userID() string {
+	return c.user().Uid
+}
+
+func (c *C) groupID() string {
+	return c.user().Gid
+}
+
+func (c *C) user() *user.User {
+	if c.currentUser != nil {
+		return c.currentUser
+	}
+	u, err := user.Current()
+	if err != nil {
+		c.printErrorAndExit("Could not get the current user: %s", err)
+	}
+	c.currentUser = u
+	return c.currentUser
 }
 
 func (c *C) gameDataDir() string {
