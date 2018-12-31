@@ -2,9 +2,9 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 
+	"github.com/houseabsolute/catalauncher/util"
 	homedir "github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -30,8 +30,7 @@ soundpacks, and even let you save scum if you want.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		util.PrintErrorAndExit(err.Error())
 	}
 }
 
@@ -51,8 +50,7 @@ func initConfig() {
 	} else {
 		home, err := homedir.Dir()
 		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
+			util.PrintErrorAndExit("Could not find your home directory: %s", err)
 		}
 
 		viper.AddConfigPath(filepath.Join(home, ".catalauncher"))

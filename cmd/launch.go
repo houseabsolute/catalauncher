@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"github.com/houseabsolute/catalauncher/launcher"
+	"github.com/houseabsolute/catalauncher/util"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -17,7 +18,15 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		launcher.New(viper.GetString("root")).Launch()
+		l, err := launcher.New(viper.GetString("root"))
+		if err != nil {
+			util.PrintErrorAndExit(err.Error())
+		}
+
+		err = l.Launch()
+		if err != nil {
+			util.PrintErrorAndExit(err.Error())
+		}
 	},
 }
 

@@ -1,6 +1,7 @@
 package launcher
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/houseabsolute/catalauncher/config"
 	"github.com/houseabsolute/catalauncher/util"
 	pb "gopkg.in/cheggaaa/pb.v2"
 )
@@ -28,8 +30,8 @@ type build struct {
 	date        time.Time
 }
 
-type C struct {
-	rootDir     string
+type Launcher struct {
+	config      *config.Config
 	stdout      io.Writer
 	stderr      io.Writer
 	buildsURI   string
@@ -38,70 +40,97 @@ type C struct {
 
 const defaultBuildsURI = "http://dev.narc.ro/cataclysm/jenkins-latest/Linux_x64/Tiles/"
 
-func New(rootDir string) *C {
-	return &C{
-		rootDir:   rootDir,
+func New(rootDir string) (*Launcher, error) {
+	c, err := config.New(rootDir)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Launcher{
+		config:    c,
 		stdout:    os.Stdout,
 		stderr:    os.Stderr,
 		buildsURI: defaultBuildsURI,
-	}
+	}, nil
 }
 
-func (c *C) Launch() {
-	builds := c.parseBuilds()
-	util.Say(c.stdout, "Found %d builds", len(builds))
+func (l *Launcher) Launch() error {
+	builds, err := l.parseBuilds()
+	if err != nil {
+		return err
+	}
 
-	cur := c.currentBuild()
+	util.Say(l.stdout, "Found %d builds", len(builds))
+
+	cur, err := l.currentBuild()
+
 	if cur == 0 {
-		util.Say(c.stdout, "No builds have been downloaded yet")
+		util.Say(l.stdout, "No builds have been downloaded yet")
 	} else if cur != builds[0].buildNumber {
-		util.Say(c.stdout, "Currently using build #%d", cur)
+		util.Say(l.stdout, "Currently using build #%d", cur)
 		util.Say(
-			c.stdout,
+			l.stdout,
 			"The latest build is build #%d, released %s",
 			builds[0].buildNumber, builds[0].date.Format("2006-01-02 15:04"),
 		)
 	} else {
 		util.Say(
-			c.stdout,
+			l.stdout,
 			"You have the latest build, #%d, released %s",
 			builds[0].buildNumber, builds[0].date.Format("2006-01-02 15:04"),
 		)
 	}
 
 	if cur != builds[0].buildNumber {
-		c.downloadBuild(builds[0])
+		err := l.downloadBuild(builds[0])
+		if err != nil {
+			return err
+		}
+
 		cur = builds[0].buildNumber
 	}
 
-	c.launchGame(cur)
+	err = l.launchGame(cur)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 var fileRE = regexp.MustCompile(`^cataclysmdda-([0-9].[A-Z]-(\d+))\.tar\.gz$`)
 
-func (c *C) parseBuilds() []build {
-	util.Say(c.stdout, "Getting list of builds from %s", c.buildsURI)
-	res, err := http.Get(c.buildsURI)
+func (l *Launcher) parseBuilds() ([]build, error) {
+	util.Say(l.stdout, "Getting list of builds from %s", l.buildsURI)
+	res, err := http.Get(l.buildsURI)
 	if err != nil {
-		c.printErrorAndExit("Could not fetch build list from %s: %s", c.buildsURI, err)
+		return []build{}, fmt.Errorf("Could not fetch build list from %s: %s", l.buildsURI, err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != 200 {
-		c.printErrorAndExit(
+		return []build{}, fmt.Errorf(
 			"Did not get a 200 status when fetching %s, got a %d (%s) instead",
-			c.buildsURI, res.StatusCode, res.Status,
+			l.buildsURI, res.StatusCode, res.Status,
 		)
 	}
 
 	doc, err := goquery.NewDocumentFromReader(res.Body)
 	if err != nil {
-		c.printErrorAndExit("Error parsing HTML from %s: %s", c.buildsURI, err)
+		return []build{}, fmt.Errorf("Error parsing HTML from %s: %s", l.buildsURI, err)
 	}
 
-	buildDates := c.parseBuildDates(doc)
+	buildDates, err := l.parseBuildDates(doc)
+	if err != nil {
+		return []build{}, err
+	}
 
 	builds := []build{}
+	var eachErr error
 	doc.Find("a").Each(func(_ int, sel *goquery.Selection) {
+		if eachErr != nil {
+			return
+		}
+
 		href, _ := sel.Attr("href")
 		m := fileRE.FindStringSubmatch(href)
 		if len(m) < 2 {
@@ -110,13 +139,13 @@ func (c *C) parseBuilds() []build {
 
 		num, err := strconv.Atoi(m[2])
 		if err != nil {
-			c.printErrorAndExit("Could not convert %s to an integer: %s", m[2], err)
+			eachErr = fmt.Errorf("Could not convert %s to an integer: %s", m[2], err)
 		}
 
 		builds = append(
 			builds,
 			build{
-				uri:         c.buildsURI + href,
+				uri:         l.buildsURI + href,
 				filename:    href,
 				version:     m[1],
 				buildNumber: num,
@@ -124,35 +153,39 @@ func (c *C) parseBuilds() []build {
 			},
 		)
 	})
+	if eachErr != nil {
+		return []build{}, eachErr
+	}
+
 	// Using After gives us a reverse sorting from most to least recent.
 	sort.SliceStable(builds, func(i, j int) bool { return builds[i].date.After(builds[j].date) })
-	return builds
+	return builds, nil
 }
 
 var buildDatesRE = regexp.MustCompile(`(cataclysmdda-\S+\.tar\.gz)\s+(2\d\d\d-\d\d-\d\d \d\d:\d\d)`)
 
-func (c *C) parseBuildDates(doc *goquery.Document) map[string]time.Time {
+func (l *Launcher) parseBuildDates(doc *goquery.Document) (map[string]time.Time, error) {
 	dates := map[string]time.Time{}
 	m := buildDatesRE.FindAllStringSubmatch(doc.Find("body").First().Text(), -1)
 	for _, pair := range m {
 		d, err := time.Parse("2006-01-02 15:04", pair[2])
 		if err != nil {
-			c.printErrorAndExit("Could not parse date for the file %s from text (%s)", pair[1], pair[2])
+			return dates, fmt.Errorf("Could not parse date for the file %s from text (%s)", pair[1], pair[2])
 		}
 		dates[pair[1]] = d
 	}
-	return dates
+	return dates, nil
 }
 
 var buildNumberRE = regexp.MustCompile(`^[1-9][0-9]*$`)
 
-func (c *C) currentBuild() int {
-	files, err := ioutil.ReadDir(c.buildDir())
+func (l *Launcher) currentBuild() (int, error) {
+	files, err := ioutil.ReadDir(l.buildDir())
 	if err != nil {
 		if os.IsNotExist(err) {
-			return 0
+			return 0, nil
 		}
-		c.printErrorAndExit("Could not read directory at %s: %s", c.buildDir(), err)
+		return 0, fmt.Errorf("Could not read directory at %s: %s", l.buildDir(), err)
 	}
 
 	builds := []int{}
@@ -160,7 +193,7 @@ func (c *C) currentBuild() int {
 		if f.IsDir() && buildNumberRE.MatchString(f.Name()) {
 			i, err := strconv.Atoi(f.Name())
 			if err != nil {
-				c.printErrorAndExit("Could not convert %s to an integer: %s", f.Name(), err)
+				return 0, fmt.Errorf("Could not convert %s to an integer: %s", f.Name(), err)
 			}
 			builds = append(builds, i)
 		}
@@ -168,27 +201,27 @@ func (c *C) currentBuild() int {
 
 	sort.Ints(builds)
 
-	return builds[len(builds)-1]
+	return builds[len(builds)-1], nil
 }
 
-func (c *C) downloadBuild(b build) {
-	util.Say(c.stdout, "Downloading build #%d from %s", b.buildNumber, b.uri)
+func (l *Launcher) downloadBuild(b build) error {
+	util.Say(l.stdout, "Downloading build #%d from %s", b.buildNumber, b.uri)
 
 	dir, err := ioutil.TempDir("", "catalauncher-")
 	if err != nil {
-		c.printErrorAndExit("Could not create a temporary directory: %s", err)
+		return fmt.Errorf("Could not create a temporary directory: %s", err)
 	}
 
 	file := filepath.Join(dir, b.filename)
 	out, err := os.Create(file)
 	if err != nil {
-		c.printErrorAndExit("Could not create file at %s: %s", file, err)
+		return fmt.Errorf("Could not create file at %s: %s", file, err)
 	}
 	defer out.Close()
 
 	resp, err := http.Get(b.uri)
 	if err != nil {
-		c.printErrorAndExit("Could not get %s: %s", b.uri, err)
+		return fmt.Errorf("Could not get %s: %s", b.uri, err)
 	}
 	defer resp.Body.Close()
 
@@ -197,7 +230,7 @@ func (c *C) downloadBuild(b build) {
 	if cl != "" {
 		len, err = strconv.Atoi(cl)
 		if err != nil {
-			c.printErrorAndExit("Could not convert %s to an integer: %s", cl, err)
+			return fmt.Errorf("Could not convert %s to an integer: %s", cl, err)
 		}
 	}
 
@@ -207,35 +240,49 @@ func (c *C) downloadBuild(b build) {
 
 	_, err = io.Copy(out, rd)
 	if err != nil {
-		c.printErrorAndExit("Could not save %s to %s: %s", b.uri, file, err)
+		return fmt.Errorf("Could not save %s to %s: %s", b.uri, file, err)
 	}
 
-	c.untarBuild(file, b)
+	return l.untarBuild(file, b)
 }
 
-func (c *C) untarBuild(file string, b build) string {
-	target := filepath.Join(c.buildDir(), strconv.Itoa(b.buildNumber))
-	c.mkdir(target)
+func (l *Launcher) untarBuild(file string, b build) error {
+	target := filepath.Join(l.buildDir(), strconv.Itoa(b.buildNumber))
+	err := l.mkdir(target)
+	if err != nil {
+		return err
+	}
 
 	cmd := exec.Command("tar", "xzf", file, "-C", target)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		c.printErrorAndExit(`Could not run "tar xvzf %s -C %s": %s\n%s`, file, target, err, out)
+		return fmt.Errorf(`Could not run "tar xvzf %s -C %s": %s\n%s`, file, target, err, out)
 	}
 
-	return ""
+	return nil
 }
 
-func (c *C) launchGame(num int) {
-	dataDir := c.gameDataDir()
-	c.mkdir(dataDir)
+func (l *Launcher) launchGame(num int) error {
+	dataDir := l.gameDataDir()
+	err := l.mkdir(dataDir)
+	if err != nil {
+		return err
+	}
 
 	// XXX - need to get "cataclysmdda-0.C" dynamically
-	gameDir := filepath.Join(c.buildDir(), strconv.Itoa(num), "cataclysmdda-0.C")
+	gameDir := filepath.Join(l.buildDir(), strconv.Itoa(num), "cataclysmdda-0.C")
 
+	uid, err := l.userID()
+	if err != nil {
+		return err
+	}
+	gid, err := l.groupID()
+	if err != nil {
+		return err
+	}
 	args := []string{
 		"run",
-		"--user", fmt.Sprintf("%s:%s", c.userID(), c.groupID()),
+		"--user", fmt.Sprintf("%s:%s", uid, gid),
 		"--rm",
 		"-i",
 		"-e", "DISPLAY",
@@ -251,48 +298,59 @@ func (c *C) launchGame(num int) {
 	cmd := exec.Command("docker", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		c.printErrorAndExit("Could not run \"docker %s\": %s\n%s", strings.Join(args, " "), err, out)
+		msg := fmt.Sprintf("Could not run \"docker %s\": %s\n%s", strings.Join(args, " "), err)
+		if len(out) > 0 {
+			msg += "\n" + string(out)
+		}
+		return errors.New(msg)
 
 	}
 	os.Exit(0)
+
+	// We should never get here for obvious reasons
+	return nil
 }
 
-func (c *C) mkdir(dir string) {
+func (l *Launcher) mkdir(dir string) error {
 	err := os.MkdirAll(dir, 0755)
 	if err != nil {
-		c.printErrorAndExit("Could not make directory %s: %s", dir, err)
+		return fmt.Errorf("Could not make directory %s: %s", dir, err)
 	}
+	return nil
 }
 
-func (c *C) userID() string {
-	return c.user().Uid
+func (l *Launcher) userID() (string, error) {
+	u, err := l.user()
+	if err != nil {
+		return "", err
+	}
+	return u.Uid, nil
 }
 
-func (c *C) groupID() string {
-	return c.user().Gid
+func (l *Launcher) groupID() (string, error) {
+	u, err := l.user()
+	if err != nil {
+		return "", err
+	}
+	return u.Gid, nil
 }
 
-func (c *C) user() *user.User {
-	if c.currentUser != nil {
-		return c.currentUser
+func (l *Launcher) user() (*user.User, error) {
+	if l.currentUser != nil {
+		return l.currentUser, nil
 	}
 	u, err := user.Current()
 	if err != nil {
-		c.printErrorAndExit("Could not get the current user: %s", err)
+		return nil, fmt.Errorf("Could not get the current user: %s", err)
 	}
-	c.currentUser = u
-	return c.currentUser
+	l.currentUser = u
+	return l.currentUser, nil
 }
 
-func (c *C) gameDataDir() string {
-	return filepath.Join(c.rootDir, "game-data")
+func (l *Launcher) gameDataDir() string {
+	return filepath.Join(l.config.RootDir(), "game-data")
 }
 
-func (c *C) buildDir() string {
-	return filepath.Join(c.rootDir, "builds")
-}
-
-func (c *C) printErrorAndExit(tmpl string, args ...interface{}) {
-	util.Say(c.stderr, tmpl, args...)
-	os.Exit(1)
+func (l *Launcher) buildDir() string {
+	return filepath.Join(l.config.RootDir(), "builds")
 }

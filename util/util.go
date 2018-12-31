@@ -6,6 +6,11 @@ import (
 	"os"
 )
 
+func PrintErrorAndExit(tmpl string, args ...interface{}) {
+	Say(os.Stderr, tmpl, args...)
+	os.Exit(1)
+}
+
 func Say(output io.Writer, tmpl string, args ...interface{}) {
 	output.Write([]byte(maybeFormat(tmpl, args) + "\n"))
 }
