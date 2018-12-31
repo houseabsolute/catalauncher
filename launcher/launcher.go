@@ -280,20 +280,32 @@ func (l *Launcher) launchGame(num int) error {
 	// XXX - need to get "cataclysmdda-0.C" dynamically
 	gameDir := filepath.Join(l.buildDir(), strconv.Itoa(num), "cataclysmdda-0.C")
 
+	runPulse := fmt.Sprintf("/run/user/%s/pulse", l.user.Uid)
+
 	args := []string{
 		"run",
 		"--user", fmt.Sprintf("%s:%s", l.user.Uid, l.user.Gid),
 		"--rm",
+		"--privileged",
 		"-i",
+		// Needed for sound w/ Pulseaudio
+		"-v", "/etc/machine-id:/etc/machine-id",
+		"-v", runPulse + ":" + runPulse,
+		"-v", "/var/lib/dbus:/var/lib/dbus",
+		"-v", fmt.Sprintf("%s/.pulse:/.pulse", l.user.HomeDir),
+		// Needed for graphics
 		"-e", "DISPLAY",
 		"--device", "/dev/dri",
-		"--device", "/dev/snd",
 		"-v", "/tmp/.X11-unix:/tmp/.X11-unix",
+		//
 		"-v", dataDir + ":/data",
 		"-v", gameDir + ":/game",
 		"-w", "/game",
 		"houseabsolute/catalauncher-player:latest",
-		"./cataclysm-tiles", "--save-dir", "/data/save", "--config-dir", "/data/config",
+		"./cataclysm-tiles",
+		"--savedir", "/data/save/",
+		"--configdir", "/data/config/",
+		"--memorialdir", "/data/graveyard/",
 	}
 	cmd := exec.Command("docker", args...)
 	out, err := cmd.CombinedOutput()
