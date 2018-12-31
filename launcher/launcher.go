@@ -284,10 +284,11 @@ func (l *Launcher) launchGame(num int) error {
 
 	args := []string{
 		"run",
-		"--user", fmt.Sprintf("%s:%s", l.user.Uid, l.user.Gid),
+		// We don't want the container sticking around once the game exits.
 		"--rm",
-		"--privileged",
-		"-i",
+		// We want to make sure save files and such are owned by the current
+		// user, not root.
+		"--user", fmt.Sprintf("%s:%s", l.user.Uid, l.user.Gid),
 		// Needed for sound w/ Pulseaudio
 		"-v", "/etc/machine-id:/etc/machine-id",
 		"-v", runPulse + ":" + runPulse,
@@ -300,6 +301,7 @@ func (l *Launcher) launchGame(num int) error {
 		//
 		"-v", dataDir + ":/data",
 		"-v", gameDir + ":/game",
+		// CDDA seems to expect PWD to be the game root dir.
 		"-w", "/game",
 		"houseabsolute/catalauncher-player:latest",
 		"./cataclysm-tiles",
