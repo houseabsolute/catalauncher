@@ -18,6 +18,7 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/houseabsolute/catalauncher/config"
+	"github.com/houseabsolute/catalauncher/curuser"
 	"github.com/houseabsolute/catalauncher/util"
 	pb "gopkg.in/cheggaaa/pb.v2"
 )
@@ -32,6 +33,7 @@ type build struct {
 
 type Launcher struct {
 	config      *config.Config
+	user        *curuser.User
 	stdout      io.Writer
 	stderr      io.Writer
 	buildsURI   string
@@ -46,8 +48,14 @@ func New(rootDir string) (*Launcher, error) {
 		return nil, err
 	}
 
+	user, err := curuser.New()
+	if err != nil {
+		return nil, err
+	}
+
 	return &Launcher{
 		config:    c,
+		user:      user,
 		stdout:    os.Stdout,
 		stderr:    os.Stderr,
 		buildsURI: defaultBuildsURI,
@@ -272,17 +280,9 @@ func (l *Launcher) launchGame(num int) error {
 	// XXX - need to get "cataclysmdda-0.C" dynamically
 	gameDir := filepath.Join(l.buildDir(), strconv.Itoa(num), "cataclysmdda-0.C")
 
-	uid, err := l.userID()
-	if err != nil {
-		return err
-	}
-	gid, err := l.groupID()
-	if err != nil {
-		return err
-	}
 	args := []string{
 		"run",
-		"--user", fmt.Sprintf("%s:%s", uid, gid),
+		"--user", fmt.Sprintf("%s:%s", l.user.Uid, l.user.Gid),
 		"--rm",
 		"-i",
 		"-e", "DISPLAY",
@@ -317,34 +317,6 @@ func (l *Launcher) mkdir(dir string) error {
 		return fmt.Errorf("Could not make directory %s: %s", dir, err)
 	}
 	return nil
-}
-
-func (l *Launcher) userID() (string, error) {
-	u, err := l.user()
-	if err != nil {
-		return "", err
-	}
-	return u.Uid, nil
-}
-
-func (l *Launcher) groupID() (string, error) {
-	u, err := l.user()
-	if err != nil {
-		return "", err
-	}
-	return u.Gid, nil
-}
-
-func (l *Launcher) user() (*user.User, error) {
-	if l.currentUser != nil {
-		return l.currentUser, nil
-	}
-	u, err := user.Current()
-	if err != nil {
-		return nil, fmt.Errorf("Could not get the current user: %s", err)
-	}
-	l.currentUser = u
-	return l.currentUser, nil
 }
 
 func (l *Launcher) gameDataDir() string {
