@@ -7,6 +7,8 @@ import (
 	"github.com/spf13/viper"
 )
 
+var build uint
+
 // launchCmd represents the launch command
 var launchCmd = &cobra.Command{
 	Use:   "launch",
@@ -18,7 +20,7 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		l, err := launcher.New(viper.GetString("root"))
+		l, err := launcher.New(viper.GetString("root"), build)
 		if err != nil {
 			util.PrintErrorAndExit(err.Error())
 		}
@@ -31,5 +33,8 @@ to quickly create a Cobra application.`,
 }
 
 func init() {
+	launchCmd.PersistentFlags().UintVar(
+		&build, "build", 0, "the build number to launch (defaults to the latest)")
 	rootCmd.AddCommand(launchCmd)
+
 }

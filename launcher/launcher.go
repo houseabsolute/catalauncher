@@ -27,12 +27,13 @@ type build struct {
 	uri         string
 	filename    string
 	version     string
-	buildNumber int
+	buildNumber uint
 	date        time.Time
 }
 
 type Launcher struct {
 	config      *config.Config
+	build       uint
 	user        *curuser.User
 	stdout      io.Writer
 	stderr      io.Writer
@@ -42,7 +43,7 @@ type Launcher struct {
 
 const defaultBuildsURI = "http://dev.narc.ro/cataclysm/jenkins-latest/Linux_x64/Tiles/"
 
-func New(rootDir string) (*Launcher, error) {
+func New(rootDir string, build uint) (*Launcher, error) {
 	c, err := config.New(rootDir)
 	if err != nil {
 		return nil, err
@@ -55,6 +56,7 @@ func New(rootDir string) (*Launcher, error) {
 
 	return &Launcher{
 		config:    c,
+		build:     build,
 		user:      user,
 		stdout:    os.Stdout,
 		stderr:    os.Stderr,
@@ -63,19 +65,62 @@ func New(rootDir string) (*Launcher, error) {
 }
 
 func (l *Launcher) Launch() error {
-	builds, err := l.parseBuilds()
+	local, err := l.localBuilds()
 	if err != nil {
 		return err
 	}
 
+	var wanted build
+	if l.build != 0 {
+		builds, err := l.parseBuilds()
+		if err != nil {
+			return err
+		}
+		for _, b := range builds {
+			if b.buildNumber == l.build {
+				wanted = b
+				break
+			}
+		}
+		if wanted.uri == "" {
+			return fmt.Errorf(
+				"Could not find the build you requested, #%d, in the list of available builds", l.build)
+		}
+	} else {
+		var err error
+		wanted, err = l.latestBuild()
+		if err != nil {
+			return err
+		}
+	}
+
+	if _, exists := local[wanted.buildNumber]; !exists {
+		err := l.downloadBuild(wanted)
+		if err != nil {
+			return err
+		}
+	}
+
+	return l.launchGame(wanted.buildNumber)
+}
+
+func (l *Launcher) latestBuild() (build, error) {
+	builds, err := l.parseBuilds()
+	if err != nil {
+		return build{}, err
+	}
+
 	util.Say(l.stdout, "Found %d builds", len(builds))
 
-	cur, err := l.currentBuild()
+	localLatest, err := l.latestLocalBuild()
+	if err != nil {
+		return build{}, err
+	}
 
-	if cur == 0 {
+	if localLatest == 0 {
 		util.Say(l.stdout, "No builds have been downloaded yet")
-	} else if cur != builds[0].buildNumber {
-		util.Say(l.stdout, "Currently using build #%d", cur)
+	} else if localLatest != builds[0].buildNumber {
+		util.Say(l.stdout, "Latest local build is #%d", localLatest)
 		util.Say(
 			l.stdout,
 			"The latest build is build #%d, released %s",
@@ -89,21 +134,7 @@ func (l *Launcher) Launch() error {
 		)
 	}
 
-	if cur != builds[0].buildNumber {
-		err := l.downloadBuild(builds[0])
-		if err != nil {
-			return err
-		}
-
-		cur = builds[0].buildNumber
-	}
-
-	err = l.launchGame(cur)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return builds[0], nil
 }
 
 var fileRE = regexp.MustCompile(`^cataclysmdda-([0-9].[A-Z]-(\d+))\.tar\.gz$`)
@@ -156,7 +187,7 @@ func (l *Launcher) parseBuilds() ([]build, error) {
 				uri:         l.buildsURI + href,
 				filename:    href,
 				version:     m[1],
-				buildNumber: num,
+				buildNumber: uint(num),
 				date:        buildDates[href],
 			},
 		)
@@ -187,29 +218,43 @@ func (l *Launcher) parseBuildDates(doc *goquery.Document) (map[string]time.Time,
 
 var buildNumberRE = regexp.MustCompile(`^[1-9][0-9]*$`)
 
-func (l *Launcher) currentBuild() (int, error) {
+func (l *Launcher) latestLocalBuild() (uint, error) {
+	local, err := l.localBuilds()
+	if err != nil {
+		return 0, err
+	}
+
+	nums := []uint{}
+	for n := range local {
+		nums = append(nums, n)
+	}
+
+	sort.Slice(nums, func(i, j int) bool { return nums[i] < nums[j] })
+	return nums[len(nums)-1], nil
+}
+
+func (l *Launcher) localBuilds() (map[uint]bool, error) {
+	local := map[uint]bool{}
+
 	files, err := ioutil.ReadDir(l.buildDir())
 	if err != nil {
 		if os.IsNotExist(err) {
-			return 0, nil
+			return local, nil
 		}
-		return 0, fmt.Errorf("Could not read directory at %s: %s", l.buildDir(), err)
+		return local, fmt.Errorf("Could not read directory at %s: %s", l.buildDir(), err)
 	}
 
-	builds := []int{}
 	for _, f := range files {
 		if f.IsDir() && buildNumberRE.MatchString(f.Name()) {
 			i, err := strconv.Atoi(f.Name())
 			if err != nil {
-				return 0, fmt.Errorf("Could not convert %s to an integer: %s", f.Name(), err)
+				return local, fmt.Errorf("Could not convert %s to an integer: %s", f.Name(), err)
 			}
-			builds = append(builds, i)
+			local[uint(i)] = true
 		}
 	}
 
-	sort.Ints(builds)
-
-	return builds[len(builds)-1], nil
+	return local, nil
 }
 
 func (l *Launcher) downloadBuild(b build) error {
@@ -255,7 +300,7 @@ func (l *Launcher) downloadBuild(b build) error {
 }
 
 func (l *Launcher) untarBuild(file string, b build) error {
-	target := filepath.Join(l.buildDir(), strconv.Itoa(b.buildNumber))
+	target := filepath.Join(l.buildDir(), fmt.Sprintf("%d", b.buildNumber))
 	err := l.mkdir(target)
 	if err != nil {
 		return err
@@ -270,7 +315,7 @@ func (l *Launcher) untarBuild(file string, b build) error {
 	return nil
 }
 
-func (l *Launcher) launchGame(num int) error {
+func (l *Launcher) launchGame(buildNumber uint) error {
 	dataDir := l.gameDataDir()
 	err := l.mkdir(dataDir)
 	if err != nil {
@@ -278,7 +323,7 @@ func (l *Launcher) launchGame(num int) error {
 	}
 
 	// XXX - need to get "cataclysmdda-0.C" dynamically
-	gameDir := filepath.Join(l.buildDir(), strconv.Itoa(num), "cataclysmdda-0.C")
+	gameDir := filepath.Join(l.buildDir(), fmt.Sprintf("%d", buildNumber), "cataclysmdda-0.C")
 
 	runPulse := fmt.Sprintf("/run/user/%s/pulse", l.user.Uid)
 

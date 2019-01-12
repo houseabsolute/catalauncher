@@ -12,7 +12,6 @@ import (
 
 var cfgFile string
 
-// rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "catalauncher",
 	Short: "Manage and launch Cataclysm: Dark Days Ahead",
@@ -26,8 +25,6 @@ soundpacks, and even let you save scum if you want.
 	//	Run: func(cmd *cobra.Command, args []string) { },
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		util.PrintErrorAndExit(err.Error())
@@ -36,11 +33,8 @@ func Execute() {
 
 func init() {
 	cobra.OnInitialize(initConfig)
-
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ~/.catalauncher/config.yaml)")
+	rootCmd.PersistentFlags().StringVar(
+		&cfgFile, "config", "", "config file (default is ~/.catalauncher/config.yaml)")
 }
 
 // initConfig reads in config file and ENV variables if set.
