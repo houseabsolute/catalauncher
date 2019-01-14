@@ -16,10 +16,12 @@ import (
 	"strings"
 	"time"
 
+	"code.gitea.io/git"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/houseabsolute/catalauncher/config"
 	"github.com/houseabsolute/catalauncher/curuser"
 	"github.com/houseabsolute/catalauncher/util"
+	"github.com/otiai10/copy"
 	pb "gopkg.in/cheggaaa/pb.v2"
 )
 
@@ -70,28 +72,9 @@ func (l *Launcher) Launch() error {
 		return err
 	}
 
-	var wanted build
-	if l.build != 0 {
-		builds, err := l.parseBuilds()
-		if err != nil {
-			return err
-		}
-		for _, b := range builds {
-			if b.buildNumber == l.build {
-				wanted = b
-				break
-			}
-		}
-		if wanted.uri == "" {
-			return fmt.Errorf(
-				"Could not find the build you requested, #%d, in the list of available builds", l.build)
-		}
-	} else {
-		var err error
-		wanted, err = l.latestBuild()
-		if err != nil {
-			return err
-		}
+	wanted, err := l.determineWantedBuild()
+	if err != nil {
+		return err
 	}
 
 	if _, exists := local[wanted.buildNumber]; !exists {
@@ -101,7 +84,37 @@ func (l *Launcher) Launch() error {
 		}
 	}
 
-	return l.launchGame(wanted.buildNumber)
+	err = l.updateExtras(wanted)
+	if err != nil {
+		return err
+	}
+
+	return l.launchGame(wanted)
+}
+
+func (l *Launcher) determineWantedBuild() (build, error) {
+	if l.build == 0 {
+		return l.latestBuild()
+	}
+
+	builds, err := l.parseBuilds()
+	if err != nil {
+		return build{}, err
+	}
+
+	var wanted build
+	for _, b := range builds {
+		if b.buildNumber == l.build {
+			wanted = b
+			break
+		}
+	}
+	if wanted.uri == "" {
+		return build{}, fmt.Errorf(
+			"Could not find the build you requested, #%d, in the list of available builds", l.build)
+	}
+
+	return wanted, nil
 }
 
 func (l *Launcher) latestBuild() (build, error) {
@@ -224,6 +237,10 @@ func (l *Launcher) latestLocalBuild() (uint, error) {
 		return 0, err
 	}
 
+	if len(local) == 0 {
+		return 0, nil
+	}
+
 	nums := []uint{}
 	for n := range local {
 		nums = append(nums, n)
@@ -315,15 +332,84 @@ func (l *Launcher) untarBuild(file string, b build) error {
 	return nil
 }
 
-func (l *Launcher) launchGame(buildNumber uint) error {
+const extrasGitRepo = "https://github.com/houseabsolute/cataclysm-extras-collection.git"
+
+func (l *Launcher) updateExtras(b build) error {
+	err := l.mkdir(l.extrasDir())
+	if err != nil {
+		return err
+	}
+
+	_, err = os.Stat(filepath.Join(l.extrasDir(), ".git"))
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
+		util.Say(l.stdout, "Cloning extras from %s", extrasGitRepo)
+		err = git.Clone(extrasGitRepo, l.extrasDir(), git.CloneRepoOptions{})
+		if err != nil {
+			return err
+		}
+	} else {
+		util.Say(l.stdout, "Updating extras git repo")
+		err = git.Pull(l.extrasDir(), git.PullRemoteOptions{Remote: "origin"})
+		if err != nil {
+			return err
+		}
+	}
+
+	things := [][3]string{
+		{"mods", "mods", "mod"},
+		{"soundpacks", "sound", "soundpack"},
+	}
+	for _, t := range things {
+		err = l.rcopy(
+			filepath.Join(l.extrasDir(), t[0]),
+			filepath.Join(l.gameDir(b), "data", t[1]),
+			t[2],
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (l *Launcher) rcopy(from, to, what string) error {
+	dir, err := os.Open(from)
+	if err != nil {
+		return err
+	}
+
+	entries, err := dir.Readdir(-1)
+	if err != nil {
+		return err
+	}
+
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if e.Name() == ".git" {
+			continue
+		}
+		util.Say(l.stdout, "Copying %s %s to game dir", e.Name(), what)
+		err := copy.Copy(filepath.Join(from, e.Name()), filepath.Join(to, e.Name()))
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (l *Launcher) launchGame(b build) error {
 	dataDir := l.gameDataDir()
 	err := l.mkdir(dataDir)
 	if err != nil {
 		return err
 	}
-
-	// XXX - need to get "cataclysmdda-0.C" dynamically
-	gameDir := filepath.Join(l.buildDir(), fmt.Sprintf("%d", buildNumber), "cataclysmdda-0.C")
 
 	runPulse := fmt.Sprintf("/run/user/%s/pulse", l.user.Uid)
 
@@ -345,7 +431,7 @@ func (l *Launcher) launchGame(buildNumber uint) error {
 		"-v", "/tmp/.X11-unix:/tmp/.X11-unix",
 		//
 		"-v", dataDir + ":/data",
-		"-v", gameDir + ":/game",
+		"-v", l.gameDir(b) + ":/game",
 		// CDDA seems to expect PWD to be the game root dir.
 		"-w", "/game",
 		"houseabsolute/catalauncher-player:latest",
@@ -357,7 +443,7 @@ func (l *Launcher) launchGame(buildNumber uint) error {
 	cmd := exec.Command("docker", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		msg := fmt.Sprintf("Could not run \"docker %s\": %s\n%s", strings.Join(args, " "), err)
+		msg := fmt.Sprintf("Could not run \"docker %s\": %s\n", strings.Join(args, " "), err)
 		if len(out) > 0 {
 			msg += "\n" + string(out)
 		}
@@ -382,6 +468,15 @@ func (l *Launcher) gameDataDir() string {
 	return filepath.Join(l.config.RootDir(), "game-data")
 }
 
+func (l *Launcher) extrasDir() string {
+	return filepath.Join(l.config.RootDir(), "extras")
+}
+
 func (l *Launcher) buildDir() string {
 	return filepath.Join(l.config.RootDir(), "builds")
+}
+
+func (l *Launcher) gameDir(b build) string {
+	// XXX - need to get "cataclysmdda-0.C" dynamically
+	return filepath.Join(l.buildDir(), fmt.Sprintf("%d", b.buildNumber), "cataclysmdda-0.C")
 }
