@@ -285,6 +285,14 @@
   version = "v1.0.0"
 
 [[projects]]
+  branch = "master"
+  digest = "1:e564a9e23c65422754afbc07ec84252048a83b5c9f0a2e76a761cd35472216e5"
+  name = "github.com/skratchdot/open-golang"
+  packages = ["open"]
+  pruneopts = "UT"
+  revision = "a2dfa6d0dab6634ecf39251031a3d52db73b5c7e"
+
+[[projects]]
   digest = "1:d707dbc1330c0ed177d4642d6ae102d5e2c847ebd0eb84562d0dc4f024531cfc"
   name = "github.com/spf13/afero"
   packages = [
@@ -587,6 +595,7 @@
     "github.com/manifoldco/promptui",
     "github.com/mitchellh/go-homedir",
     "github.com/otiai10/copy",
+    "github.com/skratchdot/open-golang/open",
     "github.com/spf13/cobra",
     "github.com/spf13/viper",
     "gopkg.in/cheggaaa/pb.v2",

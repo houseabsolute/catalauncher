@@ -22,6 +22,7 @@ import (
 	"github.com/houseabsolute/catalauncher/curuser"
 	"github.com/houseabsolute/catalauncher/util"
 	"github.com/otiai10/copy"
+	"github.com/skratchdot/open-golang/open"
 	pb "gopkg.in/cheggaaa/pb.v2"
 )
 
@@ -274,8 +275,12 @@ func (l *Launcher) localBuilds() (map[uint]bool, error) {
 	return local, nil
 }
 
+const changesURI = "http://gorgon.narc.ro:8080/job/Cataclysm-Matrix/changes"
+
 func (l *Launcher) downloadBuild(b build) error {
 	util.Say(l.stdout, "Downloading build #%d from %s", b.buildNumber, b.uri)
+	util.Say(l.stdout, "Opening the changes listing in your browser")
+	open.Start(changesURI)
 
 	dir, err := ioutil.TempDir("", "catalauncher-")
 	if err != nil {
