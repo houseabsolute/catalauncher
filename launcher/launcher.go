@@ -101,6 +101,11 @@ func (l *Launcher) Launch() error {
 		return err
 	}
 
+	err = l.pullDockerImage()
+	if err != nil {
+		return err
+	}
+
 	return l.launchGame(wanted)
 }
 
@@ -425,6 +430,11 @@ func (l *Launcher) rcopy(from, to, what string) error {
 	return nil
 }
 
+func (l *Launcher) pullDockerImage() error {
+	util.Say(l.stdout, "Pulling the latest houseabsolute/cataplayer-launcher image")
+	return l.runCommand("docker", []string{"pull", "houseabsolute/catalauncher-player"})
+}
+
 func (l *Launcher) launchGame(b build) error {
 	dataDir := l.gameDataDir()
 	err := l.mkdir(dataDir)
@@ -461,19 +471,28 @@ func (l *Launcher) launchGame(b build) error {
 		"--configdir", "/data/config/",
 		"--memorialdir", "/data/graveyard/",
 	}
-	cmd := exec.Command("docker", args...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		msg := fmt.Sprintf("Could not run \"docker %s\": %s\n", strings.Join(args, " "), err)
-		if len(out) > 0 {
-			msg += "\n" + string(out)
-		}
-		return errors.New(msg)
 
+	err = l.runCommand("docker", args)
+	if err != nil {
+		return err
 	}
 	os.Exit(0)
 
 	// We should never get here for obvious reasons
+	return nil
+}
+
+func (l *Launcher) runCommand(exe string, args []string) error {
+	cmd := exec.Command(exe, args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		msg := fmt.Sprintf("Could not run \"%s %s\": %s\n", exe, strings.Join(args, " "), err)
+		if len(out) > 0 {
+			msg += "\n" + string(out)
+		}
+		return errors.New(msg)
+	}
+
 	return nil
 }
 
