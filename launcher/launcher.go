@@ -78,10 +78,21 @@ func (l *Launcher) Launch() error {
 		return err
 	}
 
+	localLatest, err := l.latestLocalBuild()
+	if err != nil {
+		return err
+	}
+
 	if _, exists := local[wanted.buildNumber]; !exists {
 		err := l.downloadBuild(wanted)
 		if err != nil {
 			return err
+		}
+		if localLatest != 0 {
+			err = l.copyTemplates(localLatest, wanted.buildNumber)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -337,6 +348,14 @@ func (l *Launcher) untarBuild(file string, b build) error {
 	return nil
 }
 
+func (l *Launcher) copyTemplates(from, to uint) error {
+	return l.rcopy(
+		filepath.Join(l.gameDir(from), "templates"),
+		filepath.Join(l.gameDir(to), "templates"),
+		"template",
+	)
+}
+
 const extrasGitRepo = "https://github.com/houseabsolute/cataclysm-extras-collection.git"
 
 func (l *Launcher) updateExtras(b build) error {
@@ -370,7 +389,7 @@ func (l *Launcher) updateExtras(b build) error {
 	for _, t := range things {
 		err = l.rcopy(
 			filepath.Join(l.extrasDir(), t[0]),
-			filepath.Join(l.gameDir(b), "data", t[1]),
+			filepath.Join(l.gameDir(b.buildNumber), "data", t[1]),
 			t[2],
 		)
 		if err != nil {
@@ -393,9 +412,6 @@ func (l *Launcher) rcopy(from, to, what string) error {
 	}
 
 	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
 		if e.Name() == ".git" {
 			continue
 		}
@@ -436,7 +452,7 @@ func (l *Launcher) launchGame(b build) error {
 		"-v", "/tmp/.X11-unix:/tmp/.X11-unix",
 		//
 		"-v", dataDir + ":/data",
-		"-v", l.gameDir(b) + ":/game",
+		"-v", l.gameDir(b.buildNumber) + ":/game",
 		// CDDA seems to expect PWD to be the game root dir.
 		"-w", "/game",
 		"houseabsolute/catalauncher-player:latest",
@@ -481,7 +497,7 @@ func (l *Launcher) buildDir() string {
 	return filepath.Join(l.config.RootDir(), "builds")
 }
 
-func (l *Launcher) gameDir(b build) string {
+func (l *Launcher) gameDir(num uint) string {
 	// XXX - need to get "cataclysmdda-0.C" dynamically
-	return filepath.Join(l.buildDir(), fmt.Sprintf("%d", b.buildNumber), "cataclysmdda-0.C")
+	return filepath.Join(l.buildDir(), fmt.Sprintf("%d", num), "cataclysmdda-0.C")
 }
