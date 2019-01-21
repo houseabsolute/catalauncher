@@ -14,7 +14,10 @@ Launcher](https://github.com/remyroy/CDDA-Game-Launcher).
 You can download a binary version of the latest build on this project's
 [GitHub releases
 page](https://github.com/houseabsolute/catalauncher/releases). Put this in a
-directory in your path.
+directory in your path. Since this is released with
+[goreleaser](https://goreleaser.com/) you can also use
+[godownloader](https://github.com/goreleaser/godownloader) to install it if
+you prefer.
 
 You'll need [Docker CE installed](https://docs.docker.com/install/) in order
 to play the game since it's launched inside a Docker image. See the linked
