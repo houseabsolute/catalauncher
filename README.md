@@ -101,8 +101,8 @@ system.
 
 This container is run with quite a bit of access to the host system in order
 to make video and sound work. I'm using Docker primarily for convenience
-rather than isolation. Notably, docker is run with access to the following
-files/directories/env vars on the host system:
+rather than isolation. Notably, the container is run with access to the
+following files/directories/env vars on the host system:
 
 * `/etc/machine-id`
 * `/run/user/$USER_ID/pulse`
