@@ -20,7 +20,7 @@ directory in your path. Since this is released with
 you prefer.
 
 You'll need [Docker CE installed](https://docs.docker.com/install/) in order
-to play the game since it's launched inside a Docker image. See the linked
+to play the game since it's launched inside a Docker container. See the linked
 docs for information on installing Docker CE.
 
 ## Setup
