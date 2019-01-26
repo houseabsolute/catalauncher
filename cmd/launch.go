@@ -36,5 +36,4 @@ func init() {
 	launchCmd.PersistentFlags().UintVar(
 		&build, "build", 0, "the build number to launch (defaults to the latest)")
 	rootCmd.AddCommand(launchCmd)
-
 }
