@@ -20,6 +20,7 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/houseabsolute/catalauncher/config"
 	"github.com/houseabsolute/catalauncher/curuser"
+	"github.com/houseabsolute/catalauncher/localbuilds"
 	"github.com/houseabsolute/catalauncher/util"
 	"github.com/otiai10/copy"
 	"github.com/skratchdot/open-golang/open"
@@ -36,6 +37,7 @@ type build struct {
 
 type Launcher struct {
 	config      *config.Config
+	local       *localbuilds.LocalBuilds
 	build       uint
 	user        *curuser.User
 	stdout      io.Writer
@@ -59,6 +61,7 @@ func New(rootDir string, build uint) (*Launcher, error) {
 
 	return &Launcher{
 		config:    c,
+		local:     localbuilds.New(c),
 		build:     build,
 		user:      user,
 		stdout:    os.Stdout,
@@ -68,22 +71,22 @@ func New(rootDir string, build uint) (*Launcher, error) {
 }
 
 func (l *Launcher) Launch() error {
-	local, err := l.localBuilds()
-	if err != nil {
-		return err
-	}
-
 	wanted, err := l.determineWantedBuild()
 	if err != nil {
 		return err
 	}
 
-	localLatest, err := l.latestLocalBuild()
+	localLatest, err := l.local.Latest()
 	if err != nil {
 		return err
 	}
 
-	if _, exists := local[wanted.buildNumber]; !exists {
+	exists, err := l.local.HasBuild(wanted.buildNumber)
+	if err != nil {
+		return err
+	}
+
+	if !exists {
 		err := l.downloadBuild(wanted)
 		if err != nil {
 			return err
@@ -142,7 +145,7 @@ func (l *Launcher) latestBuild() (build, error) {
 
 	util.Say(l.stdout, "Found %d builds", len(builds))
 
-	localLatest, err := l.latestLocalBuild()
+	localLatest, err := l.local.Latest()
 	if err != nil {
 		return build{}, err
 	}
@@ -246,51 +249,6 @@ func (l *Launcher) parseBuildDates(doc *goquery.Document) (map[string]time.Time,
 	return dates, nil
 }
 
-var buildNumberRE = regexp.MustCompile(`^[1-9][0-9]*$`)
-
-func (l *Launcher) latestLocalBuild() (uint, error) {
-	local, err := l.localBuilds()
-	if err != nil {
-		return 0, err
-	}
-
-	if len(local) == 0 {
-		return 0, nil
-	}
-
-	nums := []uint{}
-	for n := range local {
-		nums = append(nums, n)
-	}
-
-	sort.Slice(nums, func(i, j int) bool { return nums[i] < nums[j] })
-	return nums[len(nums)-1], nil
-}
-
-func (l *Launcher) localBuilds() (map[uint]bool, error) {
-	local := map[uint]bool{}
-
-	files, err := ioutil.ReadDir(l.buildDir())
-	if err != nil {
-		if os.IsNotExist(err) {
-			return local, nil
-		}
-		return local, fmt.Errorf("Could not read directory at %s: %s", l.buildDir(), err)
-	}
-
-	for _, f := range files {
-		if f.IsDir() && buildNumberRE.MatchString(f.Name()) {
-			i, err := strconv.Atoi(f.Name())
-			if err != nil {
-				return local, fmt.Errorf("Could not convert %s to an integer: %s", f.Name(), err)
-			}
-			local[uint(i)] = true
-		}
-	}
-
-	return local, nil
-}
-
 const changesURI = "http://gorgon.narc.ro:8080/job/Cataclysm-Matrix/changes"
 
 func (l *Launcher) downloadBuild(b build) error {
@@ -338,7 +296,7 @@ func (l *Launcher) downloadBuild(b build) error {
 }
 
 func (l *Launcher) untarBuild(file string, b build) error {
-	target := filepath.Join(l.buildDir(), fmt.Sprintf("%d", b.buildNumber))
+	target := filepath.Join(l.config.BuildsDir(), fmt.Sprintf("%d", b.buildNumber))
 	err := l.mkdir(target)
 	if err != nil {
 		return err
@@ -355,8 +313,8 @@ func (l *Launcher) untarBuild(file string, b build) error {
 
 func (l *Launcher) copyTemplates(from, to uint) error {
 	return l.rcopy(
-		filepath.Join(l.gameDir(from), "templates"),
-		filepath.Join(l.gameDir(to), "templates"),
+		filepath.Join(l.config.GameDir(from), "templates"),
+		filepath.Join(l.config.GameDir(to), "templates"),
 		"template",
 	)
 }
@@ -364,24 +322,24 @@ func (l *Launcher) copyTemplates(from, to uint) error {
 const extrasGitRepo = "https://github.com/houseabsolute/cataclysm-extras-collection.git"
 
 func (l *Launcher) updateExtras(b build) error {
-	err := l.mkdir(l.extrasDir())
+	err := l.mkdir(l.config.ExtrasDir())
 	if err != nil {
 		return err
 	}
 
-	_, err = os.Stat(filepath.Join(l.extrasDir(), ".git"))
+	_, err = os.Stat(filepath.Join(l.config.ExtrasDir(), ".git"))
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return err
 		}
 		util.Say(l.stdout, "Cloning extras from %s", extrasGitRepo)
-		err = git.Clone(extrasGitRepo, l.extrasDir(), git.CloneRepoOptions{})
+		err = git.Clone(extrasGitRepo, l.config.ExtrasDir(), git.CloneRepoOptions{})
 		if err != nil {
 			return err
 		}
 	} else {
 		util.Say(l.stdout, "Updating extras git repo")
-		err = git.Pull(l.extrasDir(), git.PullRemoteOptions{Remote: "origin"})
+		err = git.Pull(l.config.ExtrasDir(), git.PullRemoteOptions{Remote: "origin"})
 		if err != nil {
 			return err
 		}
@@ -393,8 +351,8 @@ func (l *Launcher) updateExtras(b build) error {
 	}
 	for _, t := range things {
 		err = l.rcopy(
-			filepath.Join(l.extrasDir(), t[0]),
-			filepath.Join(l.gameDir(b.buildNumber), "data", t[1]),
+			filepath.Join(l.config.ExtrasDir(), t[0]),
+			filepath.Join(l.config.GameDir(b.buildNumber), "data", t[1]),
 			t[2],
 		)
 		if err != nil {
@@ -436,7 +394,7 @@ func (l *Launcher) pullDockerImage() error {
 }
 
 func (l *Launcher) launchGame(b build) error {
-	dataDir := l.gameDataDir()
+	dataDir := l.config.GameDataDir()
 	err := l.mkdir(dataDir)
 	if err != nil {
 		return err
@@ -462,7 +420,7 @@ func (l *Launcher) launchGame(b build) error {
 		"-v", "/tmp/.X11-unix:/tmp/.X11-unix",
 		//
 		"-v", dataDir + ":/data",
-		"-v", l.gameDir(b.buildNumber) + ":/game",
+		"-v", l.config.GameDir(b.buildNumber) + ":/game",
 		// CDDA seems to expect PWD to be the game root dir.
 		"-w", "/game",
 		"houseabsolute/catalauncher-player:latest",
@@ -502,21 +460,4 @@ func (l *Launcher) mkdir(dir string) error {
 		return fmt.Errorf("Could not make directory %s: %s", dir, err)
 	}
 	return nil
-}
-
-func (l *Launcher) gameDataDir() string {
-	return filepath.Join(l.config.RootDir(), "game-data")
-}
-
-func (l *Launcher) extrasDir() string {
-	return filepath.Join(l.config.RootDir(), "extras")
-}
-
-func (l *Launcher) buildDir() string {
-	return filepath.Join(l.config.RootDir(), "builds")
-}
-
-func (l *Launcher) gameDir(num uint) string {
-	// XXX - need to get "cataclysmdda-0.C" dynamically
-	return filepath.Join(l.buildDir(), fmt.Sprintf("%d", num), "cataclysmdda-0.C")
 }
