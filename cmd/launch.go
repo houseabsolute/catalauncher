@@ -12,13 +12,12 @@ var build uint
 // launchCmd represents the launch command
 var launchCmd = &cobra.Command{
 	Use:   "launch",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Short: "Launch Cataclysm: DDA",
+	Long: `
+The launch subcommand will start Cataclysm: DDA in a Docker container, keeping
+your saves and config in a directory on your host machine. By default it
+always downloads the latest build but you can override that with the "--build"
+flag.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		l, err := launcher.New(viper.GetString("root"), build)
 		if err != nil {
