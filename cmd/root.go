@@ -34,7 +34,7 @@ func Execute() {
 func init() {
 	cobra.OnInitialize(initConfig)
 	rootCmd.PersistentFlags().StringVar(
-		&cfgFile, "config", "", "config file (default is ~/.catalauncher/config.yaml)")
+		&cfgFile, "config", "", "config file (default is ~/.catalauncher/config.toml)")
 }
 
 // initConfig reads in config file and ENV variables if set.
