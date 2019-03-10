@@ -31,5 +31,5 @@ func (c *Config) BuildsDir() string {
 
 func (c *Config) GameDir(num uint) string {
 	// XXX - need to get "cataclysmdda-0.C" dynamically
-	return filepath.Join(c.BuildsDir(), fmt.Sprintf("%d", num), "cataclysmdda-0.C")
+	return filepath.Join(c.BuildsDir(), fmt.Sprintf("%d", num), "cataclysmdda-0.D")
 }

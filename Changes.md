@@ -1,3 +1,8 @@
+## 0.0.3  2019-03-09
+
+* Fixed the code for the change in Cataclysm version (now 0.D).
+
+
 ## 0.0.2  2019-01-26
 
 * Added a clean subcommand to clean out old builds.
