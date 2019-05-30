@@ -143,6 +143,10 @@ func (l *Launcher) latestBuild() (build, error) {
 		return build{}, err
 	}
 
+	if len(builds) == 0 {
+		return build{}, errors.New("Could not find any builds!")
+	}
+
 	util.Say(l.stdout, "Found %d builds", len(builds))
 
 	localLatest, err := l.local.Latest()
@@ -170,7 +174,7 @@ func (l *Launcher) latestBuild() (build, error) {
 	return builds[0], nil
 }
 
-var fileRE = regexp.MustCompile(`^cataclysmdda-([0-9].[A-Z]-(\d+))\.tar\.gz$`)
+var fileRE = regexp.MustCompile(`^cataclysmdda-([0-9].[A-Z]-Linux_x64-Tiles-(\d+))\.tar\.gz$`)
 
 func (l *Launcher) parseBuilds() ([]build, error) {
 	util.Say(l.stdout, "Getting list of builds from %s", l.buildsURI)
