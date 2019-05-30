@@ -1,3 +1,8 @@
+## 0.0.4  2019-05-29
+
+* Fixed parsing of build filenames.
+
+
 ## 0.0.3  2019-03-09
 
 * Fixed the code for the change in Cataclysm version (now 0.D).
