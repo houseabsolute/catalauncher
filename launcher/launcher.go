@@ -96,7 +96,17 @@ func (l *Launcher) Launch() error {
 			if err != nil {
 				return err
 			}
+
+			err = l.copyGameConfig(localLatest, wanted.buildNumber)
+			if err != nil {
+				return err
+			}
 		}
+	}
+
+	err = l.makeGameConfigDir(wanted)
+	if err != nil {
+		return err
 	}
 
 	err = l.updateExtras(wanted)
@@ -321,6 +331,29 @@ func (l *Launcher) copyTemplates(from, to uint) error {
 		filepath.Join(l.config.GameDir(to), "templates"),
 		"template",
 	)
+}
+
+// Some config files end up in the game dir even when you pass
+// --configdir. Why?
+func (l *Launcher) copyGameConfig(from, to uint) error {
+	fromDir := filepath.Join(l.config.GameDir(from), "config")
+	_, err := os.Stat(fromDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	return l.rcopy(
+		fromDir,
+		filepath.Join(l.config.GameDir(to), "config"),
+		"config",
+	)
+}
+
+func (l *Launcher) makeGameConfigDir(b build) error {
+	return os.MkdirAll(filepath.Join(l.config.GameDir(b.buildNumber), "config"), 0755)
 }
 
 const extrasGitRepo = "https://github.com/houseabsolute/cataclysm-extras-collection.git"

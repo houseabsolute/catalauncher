@@ -1,3 +1,10 @@
+## 0.0.5  2019-06-15
+
+* Some config files still end up under the game's directory tree even when
+  --configdir is passed. These are now copied to the new build when you
+  download one.
+
+
 ## 0.0.4  2019-05-29
 
 * Fixed parsing of build filenames.
