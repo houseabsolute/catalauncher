@@ -382,15 +382,26 @@ func (l *Launcher) updateExtras(b build) error {
 		}
 	}
 
-	things := [][3]string{
-		{"mods", "mods", "mod"},
-		{"soundpacks", "sound", "soundpack"},
+	things := []struct {
+		from      string
+		to        string
+		what      string
+		underData bool
+	}{
+		{"gfx", "gfx", "tileset", false},
+		{"mods", "mods", "mod", true},
+		{"soundpacks", "sound", "soundpack", true},
 	}
 	for _, t := range things {
+		toElt := []string{l.config.GameDir(b.buildNumber)}
+		if t.underData {
+			toElt = append(toElt, "data")
+		}
+		toElt = append(toElt, t.to)
 		err = l.rcopy(
-			filepath.Join(l.config.ExtrasDir(), t[0]),
-			filepath.Join(l.config.GameDir(b.buildNumber), "data", t[1]),
-			t[2],
+			filepath.Join(l.config.ExtrasDir(), t.from),
+			filepath.Join(toElt...),
+			t.what,
 		)
 		if err != nil {
 			return err
