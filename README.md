@@ -66,8 +66,8 @@ First, the launcher checks for a new binary build in
 http://dev.narc.ro/cataclysm/jenkins-latest/Linux_x64/Tiles/. These builds are
 created via Jenkins.
 
-If there is a new build it will downloaded and untarred (unless you asked for
-an older build with the `--build` flag).
+If there is a new build it will be downloaded and untarred (unless you asked
+for an older build with the `--build` flag).
 
 If the launcher is fetching a new build it will open the [Jenkins CDDA changes
 list](http://gorgon.narc.ro:8080/job/Cataclysm-Matrix/changes) in your browser
