@@ -2,11 +2,14 @@ package config
 
 import (
 	"fmt"
+	"io/ioutil"
 	"path/filepath"
+	"strings"
 )
 
 type Config struct {
 	rootDir string
+	gameDir string
 }
 
 func New(rootDir string) (*Config, error) {
@@ -30,6 +33,29 @@ func (c *Config) BuildsDir() string {
 }
 
 func (c *Config) GameDir(num uint) string {
-	// XXX - need to get "cataclysmdda-0.C" dynamically
-	return filepath.Join(c.BuildsDir(), fmt.Sprintf("%d", num), "cataclysmdda-0.D")
+	if c.gameDir != "" {
+		return c.gameDir
+	}
+
+	root := filepath.Join(c.BuildsDir(), fmt.Sprintf("%d", num))
+	entries, err := ioutil.ReadDir(root)
+	if err != nil {
+		// XXX - This should be returned but there's a bunch of places to
+		// change.
+		panic(err)
+	}
+	var dir string
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "cataclysmdda-0.E") {
+			dir = e.Name()
+			break
+		}
+	}
+	if dir == "" {
+		panic(fmt.Sprintf("Could not find cataclysmdda-? dir in %s", root))
+	}
+
+	c.gameDir = filepath.Join(root, dir)
+
+	return c.gameDir
 }

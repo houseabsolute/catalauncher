@@ -1,3 +1,9 @@
+## 0.0.6  2020-06-05
+
+* Fix handling of extracted tarball so we find the game dir when the release
+  letter changes.
+
+
 ## 0.0.5  2019-06-15
 
 * Some config files still end up under the game's directory tree even when
