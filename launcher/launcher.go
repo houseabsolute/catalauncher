@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/cheggaaa/pb/v3"
 	git "github.com/gogs/git-module"
 	"github.com/houseabsolute/catalauncher/config"
 	"github.com/houseabsolute/catalauncher/curuser"
@@ -24,7 +25,6 @@ import (
 	"github.com/houseabsolute/catalauncher/util"
 	"github.com/otiai10/copy"
 	"github.com/skratchdot/open-golang/open"
-	pb "gopkg.in/cheggaaa/pb.v2"
 )
 
 type build struct {
