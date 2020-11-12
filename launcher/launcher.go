@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"code.gitea.io/git"
 	"github.com/PuerkitoBio/goquery"
+	git "github.com/gogs/git-module"
 	"github.com/houseabsolute/catalauncher/config"
 	"github.com/houseabsolute/catalauncher/curuser"
 	"github.com/houseabsolute/catalauncher/localbuilds"
@@ -370,16 +370,21 @@ func (l *Launcher) updateExtras(b build) error {
 			return err
 		}
 		util.Say(l.stdout, "Cloning extras from %s", extrasGitRepo)
-		err = git.Clone(extrasGitRepo, l.config.ExtrasDir(), git.CloneRepoOptions{})
+		err = git.Clone(extrasGitRepo, l.config.ExtrasDir(), git.CloneOptions{})
 		if err != nil {
 			return err
 		}
-	} else {
-		util.Say(l.stdout, "Updating extras git repo")
-		err = git.Pull(l.config.ExtrasDir(), git.PullRemoteOptions{Remote: "origin"})
-		if err != nil {
-			return err
-		}
+	}
+
+	repo, err := git.Open(l.config.ExtrasDir())
+	if err != nil {
+		return err
+	}
+
+	util.Say(l.stdout, "Updating extras git repo")
+	err = repo.Pull(git.PullOptions{Remote: "origin"})
+	if err != nil {
+		return err
 	}
 
 	things := []struct {
