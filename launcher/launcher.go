@@ -282,7 +282,13 @@ func (l *Launcher) downloadBuild(b build) error {
 	}
 	defer out.Close()
 
-	resp, err := http.Get(b.uri)
+	req, _ := http.NewRequest("GET", b.uri, nil)
+	req.Header.Set("Connection", "Keep-Alive")
+	req.Header.Set("Accept-Language", "en-US")
+	req.Header.Set("User-Agent", "Mozilla/5.0")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("Could not get %s: %s", b.uri, err)
 	}
