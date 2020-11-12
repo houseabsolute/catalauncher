@@ -400,7 +400,7 @@ func (l *Launcher) updateExtras(b build) error {
 		underData bool
 	}{
 		{"gfx", "gfx", "tileset", false},
-		{"mods", "mods", "mod", true},
+//		{"mods", "mods", "mod", true},
 		{"soundpacks", "sound", "soundpack", true},
 	}
 	for _, t := range things {
